@@ -57,7 +57,7 @@ class BackendSelectionTests(unittest.TestCase):
         self.addCleanup(self.core_patch.stop)
 
     def prepare(self, weights=None, gpu=True, gamma=1.0):
-        with contextlib.redirect_stdout(self.log):
+        with contextlib.redirect_stderr(self.log):
             return blending._prepare_blending_clip(
                 self.clip, weights or [0.2] * 5, gpu, gamma
             )
@@ -120,6 +120,14 @@ class BackendSelectionTests(unittest.TestCase):
         self.assertIn("Vulkan std.Expr", self.log.getvalue())
         self.assertIn("Test GPU", self.log.getvalue())
 
+    def test_diagnostics_do_not_corrupt_vspipe_stdout(self):
+        binary_output = io.StringIO()
+        with contextlib.redirect_stdout(binary_output):
+            self.prepare()
+            self.prepare(gpu=False)
+        self.assertEqual(binary_output.getvalue(), "")
+        self.assertIn("frame blending", self.log.getvalue())
+
     def test_upload_errors_propagate(self):
         self.core.std.GPUUpload.side_effect = vs.Error("out of device memory")
         with self.assertRaisesRegex(vs.Error, "out of device memory"):
@@ -148,7 +156,7 @@ class RuntimeBlendingTests(unittest.TestCase):
             unavailable("Akarin is not installed")
         probe = cls.core.std.BlankClip(width=16, height=16, length=5)
         cls.log = io.StringIO()
-        with contextlib.redirect_stdout(cls.log):
+        with contextlib.redirect_stderr(cls.log):
             result = blending.blend(probe, [1] * 5)
         if not getattr(result, "gpu_resident", False):
             unavailable(cls.log.getvalue().strip())
@@ -186,7 +194,7 @@ class RuntimeBlendingTests(unittest.TestCase):
 
     def cpu_and_gpu(self, clip, weights, divisor=None):
         cpu = blending.average(clip, weights, divisor)
-        with contextlib.redirect_stdout(io.StringIO()):
+        with contextlib.redirect_stderr(io.StringIO()):
             gpu = blending.blend(clip, weights, divisor)
         self.assertTrue(gpu.gpu_resident)
         self.assertEqual(cpu.format.id, gpu.format.id)
@@ -273,7 +281,7 @@ class RuntimeBlendingTests(unittest.TestCase):
     def test_disabled_and_large_window_preserve_cpu_output(self):
         clip = self.make_clip(vs.YUV420P8, length=31)
         for weights, enabled in (([1] * 5, False), ([1] * 27, True)):
-            with contextlib.redirect_stdout(io.StringIO()):
+            with contextlib.redirect_stderr(io.StringIO()):
                 result = blending.blend(clip, weights, gpu=enabled)
             self.assertFalse(result.gpu_resident)
             self.assert_pixels(blending.average(clip, weights), result)
@@ -286,7 +294,7 @@ class RuntimeBlendingTests(unittest.TestCase):
                     clip = self.make_clip(fmt)
                     expected = blending.average_bright(clip, full, 2.2, weights)
                     log = io.StringIO()
-                    with contextlib.redirect_stdout(log):
+                    with contextlib.redirect_stderr(log):
                         actual = blending.blend(
                             clip, weights, gamma=2.2, is_full_color_range=full
                         )

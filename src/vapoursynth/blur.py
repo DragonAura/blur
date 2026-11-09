@@ -167,7 +167,7 @@ if settings["interpolate"]:
         ):  # if can be while if rife limits the max interpolation fps, but i don't think it does
             old_fps = video.fps
 
-            print(f"pre-interpolating to {pre_interpolated_fps}")
+            print(f"pre-interpolating to {pre_interpolated_fps}", file=sys.stderr)
 
             video = blur.interpolate.interpolate_rife(
                 video,
@@ -179,12 +179,14 @@ if settings["interpolate"]:
 
             fps_added = video.fps - old_fps
             print(
-                f"added {fps_added} (interp: {pre_interpolated_fps}. video.fps: {video.fps}/{pre_interpolated_fps})"
+                f"added {fps_added} (interp: {pre_interpolated_fps}. video.fps: {video.fps}/{pre_interpolated_fps})",
+                file=sys.stderr,
             )
 
     if video.fps < interpolated_fps:
         print(
-            f"interpolating to {interpolated_fps} with {settings['interpolation_method']}"
+            f"interpolating to {interpolated_fps} with {settings['interpolation_method']}",
+            file=sys.stderr,
         )
         old_fps = video.fps
 
@@ -237,7 +239,8 @@ if settings["interpolate"]:
 
         fps_added = video.fps - old_fps
         print(
-            f"added {fps_added} (interp: {interpolated_fps}. video.fps: {video.fps}/{interpolated_fps})"
+            f"added {fps_added} (interp: {interpolated_fps}. video.fps: {video.fps}/{interpolated_fps})",
+            file=sys.stderr,
         )
 
 # output timescale

@@ -1,9 +1,9 @@
 name: Build
 
+# Keep the upstream multi-platform build available explicitly. This fork's
+# Windows R82 build and validated-release workflow handle automatic builds.
 on:
-  push:
-    branches-ignore: ['gpu-frame-blending-r82']
-    tags-ignore: ['v*-gpu-r82*']
+  workflow_dispatch:
 
 jobs:
   build:

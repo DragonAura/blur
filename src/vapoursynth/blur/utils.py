@@ -1,5 +1,6 @@
 import vapoursynth as vs
 from vapoursynth import core
+import sys
 
 from pathlib import Path
 from fractions import Fraction
@@ -17,11 +18,11 @@ def load_plugins(extension: str):
 
     for plugin in plugin_dir.glob(f"*{extension}"):
         if plugin.name not in ignored:
-            print("Loading", plugin.name)
+            print("Loading", plugin.name, file=sys.stderr)
             try:
                 core.std.LoadPlugin(path=str(plugin))
             except Exception as e:
-                print(f"Failed to load plugin {plugin.name}: {e}")
+                print(f"Failed to load plugin {plugin.name}: {e}", file=sys.stderr)
 
 
 def safe_int(value):

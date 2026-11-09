@@ -41,6 +41,12 @@ jobs:
               path: 'src/common/blur.h', ref: request.source_sha});
             const version = Buffer.from(header.content, 'base64').toString('utf8').match(/BLUR_VERSION\s*=\s*"([^"]+)"/);
             if (!version || `v${version[1]}` !== request.tag) throw new Error('Version/tag mismatch');
+            // GitHub restricts releases containing workflow changes relative to
+            // the default branch. Promote the tested source before requesting
+            // publication; the Actions token never needs workflow-write access.
+            const {data: repo} = await github.rest.repos.get(context.repo);
+            const {data: main} = await github.rest.repos.getCommit({...context.repo, ref: repo.default_branch});
+            if (main.sha !== request.source_sha) throw new Error('Promote the tested source to the default branch first');
             core.setOutput('run_id', String(request.run_id));
 
       - uses: actions/download-artifact@v8
@@ -62,6 +68,14 @@ jobs:
               const digest = crypto.createHash('sha256').update(fs.readFileSync(`release-assets/${name}`)).digest('hex');
               if (digest !== request.sha256?.[name]) throw new Error(`Untested or changed artifact: ${name}`);
             }
+            try {
+              await github.rest.git.getRef({...context.repo, ref: `tags/${request.tag}`});
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              await github.rest.git.createRef({...context.repo, ref: `refs/tags/${request.tag}`, sha: request.source_sha});
+            }
+            const {data: tagged} = await github.rest.repos.getCommit({...context.repo, ref: request.tag});
+            if (tagged.sha !== request.source_sha) throw new Error('Existing tag points to different source; refusing to move it');
             let release;
             try {
               ({data: release} = await github.rest.repos.getReleaseByTag({...context.repo, tag: request.tag}));

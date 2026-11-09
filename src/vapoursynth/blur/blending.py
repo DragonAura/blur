@@ -1,5 +1,6 @@
 from vapoursynth import core
 import vapoursynth as vs
+import sys
 
 import blur.utils as u
 
@@ -46,7 +47,7 @@ def _prepare_blending_clip(clip, weights, gpu, gamma):
             reason = f"Vulkan initialization unavailable: {error}"
 
     if reason is not None:
-        print(f"frame blending: CPU (akarin.Expr); {reason}", flush=True)
+        print(f"frame blending: CPU (akarin.Expr); {reason}", file=sys.stderr, flush=True)
         return download(clip)
 
     # Upload the shared source once, before making the shifted clips. Overlapping
@@ -55,6 +56,7 @@ def _prepare_blending_clip(clip, weights, gpu, gamma):
     print(
         f"frame blending: GPU (Vulkan std.Expr) on {device['name']}; "
         f"{len(weights)} frames",
+        file=sys.stderr,
         flush=True,
     )
     return uploaded
