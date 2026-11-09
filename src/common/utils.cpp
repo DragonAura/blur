@@ -179,10 +179,10 @@ std::filesystem::path u::get_resources_path() {
 
 std::filesystem::path u::get_settings_path() {
 	std::filesystem::path settings_path;
-	const std::string app_name = "blur";
+	const std::string app_name = "blur-gpu";
 
 #if defined(_WIN32) || defined(_WIN64)
-	// Windows: %APPDATA%\blur
+	// Windows: %APPDATA%\blur-gpu (keep this fork's settings separate from upstream)
 	const char* app_data = std::getenv("APPDATA");
 	if (app_data) {
 		settings_path = std::filesystem::path(app_data) / app_name;
@@ -195,13 +195,13 @@ std::filesystem::path u::get_settings_path() {
 		}
 	}
 #elif defined(__APPLE__)
-	// macOS: ~/Library/Application Support/blur
+	// macOS: ~/Library/Application Support/blur-gpu
 	const char* home = std::getenv("HOME");
 	if (home) {
 		settings_path = std::filesystem::path(home) / "Library" / "Application Support" / app_name;
 	}
 #else
-	// Linux/Unix: ~/.config/blur (XDG convention)
+	// Linux/Unix: ~/.config/blur-gpu (XDG convention)
 	const char* xdg_config_home = std::getenv("XDG_CONFIG_HOME");
 	if (xdg_config_home && xdg_config_home[0] != '\0') {
 		settings_path = std::filesystem::path(xdg_config_home) / app_name;

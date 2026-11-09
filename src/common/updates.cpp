@@ -16,6 +16,9 @@ namespace {
 		if (!latest.empty() && latest[0] == 'v') {
 			latest = latest.substr(1);
 		}
+		// Fork tags append a backend label; the numeric release determines update order.
+		current = current.substr(0, current.find('-'));
+		latest = latest.substr(0, latest.find('-'));
 
 		auto current_split = u::split_string(current, ".");
 		auto latest_split = u::split_string(latest, ".");
@@ -35,6 +38,8 @@ namespace {
 			return true; // latest version has a subversion where current does not. e.g. v2.1 vs v2
 		if (latest_split.size() == 1 && current_split.size() > 1)
 			return false; // ..
+		if (current_split.size() == 1 && latest_split.size() == 1)
+			return false;
 
 		size_t current_subversions = current_split[1].size();
 		size_t latest_subversions = latest_split[1].size();
@@ -49,15 +54,21 @@ namespace {
 				return false; // ..
 		}
 
-		// they're the same up to the point where one has more subversions
-		return latest_subversions >
-		       current_subversions; // latest is newer if more subversions. e.g. 2.111 > 2.11. note: yes, this will
-		                            // happen for v2.0 vs v2 or v2.10 vs v2.1, but edge case, idc. will never happen.
+		// Preserve upstream's ordering of two-part versions, then compare numeric fork patches.
+		if (current_subversions != latest_subversions)
+			return latest_subversions > current_subversions;
+		for (size_t i = 2; i < std::max(current_split.size(), latest_split.size()); i++) {
+			int current_patch = i < current_split.size() ? std::stoi(current_split[i]) : 0;
+			int latest_patch = i < latest_split.size() ? std::stoi(latest_split[i]) : 0;
+			if (current_patch != latest_patch)
+				return current_patch < latest_patch;
+		}
+		return false;
 	}
 }
 
 tl::expected<updates::UpdateCheckRes, std::string> updates::is_latest_version(bool include_beta) {
-	std::string url = "https://api.github.com/repos/f0e/blur/releases";
+	std::string url = "https://api.github.com/repos/DragonAura/blur/releases";
 
 	auto response = cpr::Get(cpr::Url{ url });
 
@@ -120,7 +131,7 @@ tl::expected<updates::UpdateCheckRes, std::string> updates::is_latest_version(bo
 		return updates::UpdateCheckRes{
 			.is_latest = is_latest,
 			.latest_tag = latest_tag,
-			.latest_tag_url = "https://github.com/f0e/blur/releases/" + latest_tag,
+			.latest_tag_url = "https://github.com/DragonAura/blur/releases/tag/" + latest_tag,
 		};
 	}
 	catch (const std::exception& e) {
@@ -151,7 +162,7 @@ bool updates::update_to_tag(
 #endif
 
 		// Create download URL
-		std::string download_url = "https://github.com/f0e/blur/releases/download/" + tag + "/" + installer_filename;
+		std::string download_url = "https://github.com/DragonAura/blur/releases/download/" + tag + "/" + installer_filename;
 
 		// Open file for writing
 		std::ofstream installer_file(installer_path, std::ios::binary);

@@ -24,7 +24,11 @@ tl::expected<void, std::string> Blur::initialise(bool _verbose, bool _using_prev
 		config_presets::create(preset_config_path, PresetSettings{});
 
 #if defined(_WIN32)
-	used_installer = std::filesystem::exists(resources_path / "lib\\vapoursynth\\vspipe.exe") &&
+	// R82 packages VSPipe inside its Python wheel; retain support for older portable layouts.
+	auto bundled_vspipe = resources_path / "lib/vapoursynth/Lib/site-packages/vapoursynth/vspipe.exe";
+	if (!std::filesystem::exists(bundled_vspipe))
+		bundled_vspipe = resources_path / "lib/vapoursynth/vspipe.exe";
+	used_installer = std::filesystem::exists(bundled_vspipe) &&
 	                 std::filesystem::exists(resources_path / "lib\\ffmpeg\\ffmpeg.exe");
 #elif defined(__linux__)
 	// todo
@@ -36,7 +40,7 @@ tl::expected<void, std::string> Blur::initialise(bool _verbose, bool _using_prev
 
 	if (used_installer) {
 #if defined(_WIN32)
-		vspipe_path = (blur.resources_path / "lib\\vapoursynth\\vspipe.exe");
+		vspipe_path = bundled_vspipe;
 		ffmpeg_path = (blur.resources_path / "lib\\ffmpeg\\ffmpeg.exe");
 		ffprobe_path = (blur.resources_path / "lib\\ffmpeg\\ffprobe.exe");
 #elif defined(__linux__)

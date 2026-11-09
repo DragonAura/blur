@@ -1,11 +1,28 @@
-# Create necessary directories
-$outDir = Join-Path $PWD "out"
+# Fixed portable runtime: no machine-wide Python or VapourSynth installation.
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$outDir = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "out"))
 
-Remove-Item -Path $outDir -Recurse -Force
+function Remove-BuildPath {
+    param([Parameter(Mandatory)][string]$Path)
+    $resolved = [IO.Path]::GetFullPath($Path)
+    if ($resolved -ne $outDir -and -not $resolved.StartsWith($outDir + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to remove a path outside ci/out: $resolved"
+    }
+    if (Test-Path -LiteralPath $resolved) {
+        if ((Get-Item -LiteralPath $resolved).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "Refusing to remove a redirected build path: $resolved"
+        }
+        Remove-Item -LiteralPath $resolved -Recurse -Force
+    }
+}
+
+Remove-BuildPath $outDir
 
 $vapoursynthDir = Join-Path $outDir "vapoursynth"
 $ffmpegDir = Join-Path $outDir "ffmpeg"
-$pluginsDir = Join-Path $vapoursynthDir "vs-plugins"
+$sitePackagesDir = Join-Path $vapoursynthDir "Lib/site-packages"
+$pluginsDir = Join-Path $sitePackagesDir "vapoursynth/plugins"
 $modelsBaseDir = Join-Path $outDir "models"
 
 # Create directories if they don't exist
@@ -22,8 +39,7 @@ function Download-File {
     )
 
     Write-Host "Downloading $Url to $OutFile"
-    $webClient = New-Object System.Net.WebClient
-    $webClient.DownloadFile($Url, $OutFile)
+    Invoke-WebRequest -Uri $Url -OutFile $OutFile -MaximumRetryCount 3 -RetryIntervalSec 5
     Write-Host "Download completed"
 }
 
@@ -36,9 +52,7 @@ function Extract-Files {
     )
 
     if (-not (Get-Command "7z" -ErrorAction SilentlyContinue)) {
-        Write-Warning "7z not found. Please install 7-Zip and make sure it's in your PATH."
-        Write-Warning "7z file is located at: $ArchivePath"
-        return
+        throw "7z not found. Install 7-Zip and add it to PATH."
     }
 
     $tempDir = [System.IO.Path]::Combine([System.IO.Path]::GetDirectoryName($ArchivePath), "temp-extract-" + [System.IO.Path]::GetRandomFileName())
@@ -47,6 +61,7 @@ function Extract-Files {
     try {
         # Extract archive
         & 7z x $ArchivePath -o"$tempDir" -y
+        if ($LASTEXITCODE -ne 0) { throw "Failed to extract $ArchivePath" }
 
         foreach ($pattern in $FilePatterns) {
             $filePath = Join-Path $tempDir $pattern
@@ -54,17 +69,17 @@ function Extract-Files {
                 Copy-Item -Path $filePath -Destination $DestinationPath
                 Write-Host "Copied $pattern to $DestinationPath"
             } else {
-                Write-Warning "Could not find $pattern in the extracted files."
+                throw "Could not find $pattern in $ArchivePath"
             }
         }
     }
     finally {
         # Clean up
         if (Test-Path $tempDir) {
-            Remove-Item -Path $tempDir -Recurse -Force
+            Remove-BuildPath $tempDir
         }
         if (Test-Path $ArchivePath) {
-            Remove-Item -Path $ArchivePath -Force
+            Remove-BuildPath $ArchivePath
         }
     }
 }
@@ -95,65 +110,73 @@ function Download-ModelFiles {
     Write-Host "Model $ModelName download completed"
 }
 
-# Download and install VapourSynth
-$vapoursynthInstallerUrl = "https://github.com/vapoursynth/vapoursynth/releases/download/R70/Install-Portable-VapourSynth-R70.ps1"
-$vapoursynthInstallerPath = Join-Path $vapoursynthDir "Install-Portable-VapourSynth-R70.ps1"
-Download-File -Url $vapoursynthInstallerUrl -OutFile $vapoursynthInstallerPath
-
-# Run VapourSynth installer
-Write-Host "Running VapourSynth installer..."
-Set-Location $vapoursynthDir
-& $vapoursynthInstallerPath -Unattended -TargetFolder $vapoursynthDir
-
-Write-Host "Cleaning up VapourSynth"
-Remove-Item -Path doc -Recurse -Force
-Remove-Item -Path Scripts -Recurse -Force
-Remove-Item -Path vs-temp-dl -Recurse -Force
-Remove-Item -Path $vapoursynthInstallerPath
-
-Set-Location $PWD
+# R82 ships its binaries in a cp312-abi3 wheel. Install the wheel in the
+# official portable layout so vsscript can locate Python without registration.
+$pythonArchive = Join-Path $outDir "python-3.12.10-embed-amd64.zip"
+$vsArchive = Join-Path $outDir "VapourSynth64-Portable-R82.zip"
+Download-File -Url "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip" -OutFile $pythonArchive
+Download-File -Url "https://github.com/vapoursynth/vapoursynth/releases/download/R82/VapourSynth64-Portable-R82.zip" -OutFile $vsArchive
+Expand-Archive -LiteralPath $pythonArchive -DestinationPath $vapoursynthDir -Force
+Expand-Archive -LiteralPath $vsArchive -DestinationPath $vapoursynthDir -Force
+Add-Content -LiteralPath (Join-Path $vapoursynthDir "python312._pth") -Value "Lib/site-packages" -Encoding utf8
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[IO.Compression.ZipFile]::ExtractToDirectory(
+    (Join-Path $vapoursynthDir "wheel/vapoursynth-82-cp312-abi3-win_amd64.whl"),
+    $sitePackagesDir,
+    $true
+)
+Remove-BuildPath $pythonArchive
+Remove-BuildPath $vsArchive
+Remove-BuildPath (Join-Path $vapoursynthDir "doc")
+Remove-BuildPath (Join-Path $vapoursynthDir "wheel")
+Get-ChildItem -LiteralPath (Join-Path $sitePackagesDir "vapoursynth") -Filter *.pdb |
+    ForEach-Object { Remove-BuildPath $_.FullName }
 
 # Plugin installations
-$plugins = @(
+# Newer API4 plugins use the standard wheel layout. Keep the complete wheel,
+# including Akarin's adjacent libzstd.dll and license metadata.
+$pluginWheels = @(
     @{
-        Name = "Akarin";
-        Url = "https://github.com/AkarinVS/vapoursynth-plugin/releases/download/v0.96/akarin-release-lexpr-amd64-v0.96g3.7z";
-        FilePatterns = @("akarin.dll");
+        Name = "vapoursynth_akarin-1.5.0-py3-none-win_amd64.whl";
+        Url = "https://files.pythonhosted.org/packages/0d/31/95658c029a7ee3bbfc1359f9fa623a13f0a3ff0d940ba9e204421dd7a0ca/vapoursynth_akarin-1.5.0-py3-none-win_amd64.whl";
     },
+    @{
+        Name = "vapoursynth_mvtools-29-py3-none-win_amd64.whl";
+        Url = "https://files.pythonhosted.org/packages/28/f5/1697a4c7238f442a24982a3e5b7b4cbc54d411b40bf3f83b955ab0ed3cc2/vapoursynth_mvtools-29-py3-none-win_amd64.whl";
+    },
+    @{
+        Name = "vapoursynth_lsmas-1310.0.0.0-py3-none-win_amd64.whl";
+        Url = "https://files.pythonhosted.org/packages/a2/4f/f5804dbeb6563486e1d72ce3e72cb9ae2c7201c6660112447f2e1c6f85ec/vapoursynth_lsmas-1310.0.0.0-py3-none-win_amd64.whl";
+    }
+)
+foreach ($wheel in $pluginWheels) {
+    $wheelPath = Join-Path $outDir $wheel.Name
+    Download-File -Url $wheel.Url -OutFile $wheelPath
+    [IO.Compression.ZipFile]::ExtractToDirectory($wheelPath, $sitePackagesDir, $true)
+    Remove-BuildPath $wheelPath
+}
+
+$plugins = @(
     @{
         Name = "BestSource";
         Url = "https://github.com/vapoursynth/bestsource/releases/download/R11/BestSource-R11.7z";
         FilePatterns = @("BestSource.dll");
     },
     @{
-        Name = "LSmashSource";
-        Url = "https://github.com/HomeOfAviSynthPlusEvolution/L-SMASH-Works/releases/download/1194.0.0.0/L-SMASH-Works-r1194.0.0.0.7z";
-        FilePatterns = @("x64/LSMASHSource.dll");
-    },
-    @{
-        Name = "MVTools";
-        Url = "https://github.com/dubhater/vapoursynth-mvtools/releases/download/v24/vapoursynth-mvtools-v24-win64.7z";
-        FilePatterns = @("libmvtools.dll");
-    },
-    @{
         Name = "VapourSynth-RIFE-ncnn-Vulkan";
         Url = "https://github.com/styler00dollar/VapourSynth-RIFE-ncnn-Vulkan/releases/download/r9_mod_v33/librife_windows_x86-64.dll";
         IsDirectDll = $true;
-    },,
+    },
     @{
         Name = "Adjust";
         Url = "https://github.com/f0e/Vapoursynth-adjust/releases/download/v1/adjust.dll";
         IsDirectDll = $true;
-    },
-    @{
-        Name = "SVPFlow";
-        Url = "https://web.archive.org/web/20190322064557if_/http://www.svp-team.com/files/gpl/svpflow-4.2.0.142.zip";
-        FilePatterns = @(
-            "svpflow-4.2.0.142/lib-windows/vapoursynth/x64/svpflow1_vs64.dll",
-            "svpflow-4.2.0.142/lib-windows/vapoursynth/x64/svpflow2_vs64.dll"
-        );
     }
 )
+
+# Legacy GPL SVPFlow uses the removed VS API3 and cannot be bundled with R82.
+# This release targets frame blending without interpolation; RIFE remains
+# available for users who explicitly select it.
 
 foreach ($plugin in $plugins) {
     Write-Host "Processing $($plugin.Name) plugin..."
@@ -198,3 +221,7 @@ foreach ($model in $modelDownloads) {
 }
 
 Write-Host "Done"
+
+# Catch incomplete archives and plugin/runtime incompatibility before packaging.
+& (Join-Path $vapoursynthDir "python.exe") -c "import vapoursynth as vs; c = vs.core; assert vs.__version__.release_major == 82; assert all(hasattr(c, p) for p in ('akarin', 'lsmas', 'bs', 'mv', 'rife', 'adjust')); print(c)"
+if ($LASTEXITCODE -ne 0) { throw "Portable VapourSynth R82/plugin smoke check failed" }

@@ -1,0 +1,99 @@
+name: Build Windows GPU R82
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['gpu-frame-blending-r82']
+    tags: ['v*-gpu-r82*']
+    paths-ignore: ['.github/gpu-release.json']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-gpu-r82-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/vcpkg-cache
+      VCPKG_DISABLE_METRICS: '1'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Use MSVC x64
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure tools
+        run: |
+          'C:\Program Files\7-Zip' >> $env:GITHUB_PATH
+          New-Item -ItemType Directory -Force vcpkg-cache | Out-Null
+          cmake --version
+          ninja --version
+
+      - name: Cache portable runtime
+        id: runtime-cache
+        uses: actions/cache@v5
+        with:
+          path: ci/out
+          key: windows-r82-runtime-${{ hashFiles('ci/build-dependencies-windows.ps1') }}
+
+      - name: Collect portable runtime
+        if: steps.runtime-cache.outputs.cache-hit != 'true'
+        run: ./ci/build-dependencies-windows.ps1
+
+      - name: Set up pinned vcpkg
+        run: |
+          $manifest = Get-Content vcpkg.json -Raw | ConvertFrom-Json
+          $baseline = $manifest.'vcpkg-configuration'.'default-registry'.baseline
+          git clone --filter=blob:none https://github.com/microsoft/vcpkg.git vcpkg
+          if ($LASTEXITCODE -ne 0) { throw 'vcpkg clone failed' }
+          git -C vcpkg checkout $baseline
+          if ($LASTEXITCODE -ne 0) { throw 'vcpkg checkout failed' }
+          & ./vcpkg/bootstrap-vcpkg.bat -disableMetrics
+          if ($LASTEXITCODE -ne 0) { throw 'vcpkg bootstrap failed' }
+
+      - name: Cache C++ dependencies
+        uses: actions/cache@v5
+        with:
+          path: |
+            vcpkg-cache
+            vcpkg/downloads
+          key: windows-msvc-r82-${{ hashFiles('vcpkg.json') }}
+
+      - name: Configure
+        run: cmake --preset win-release -B build/windows-r82
+
+      - name: Build
+        run: cmake --build build/windows-r82 --config Release --parallel 4
+
+      - name: Verify Python scripts
+        run: |
+          & ./ci/out/vapoursynth/python.exe -m compileall -q src/vapoursynth
+          if ($LASTEXITCODE -ne 0) { throw 'Python compilation failed' }
+
+      - name: Package portable zip and installer
+        run: ./ci/package-windows-gpu.ps1
+
+      - name: Smoke test packaged CLI
+        run: ./ci/smoke-windows-gpu.ps1
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v6
+        with:
+          name: blur-Windows-GPU-R82-x64
+          path: bundle/*
+          if-no-files-found: error
+          retention-days: 14
+
+      # Publication is intentionally separate: validate the exact artifact on a
+      # Vulkan-capable machine before creating a GitHub release.

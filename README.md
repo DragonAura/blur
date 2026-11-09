@@ -1,4 +1,22 @@
-# Blur
+# Blur — GPU frame blending fork
+
+This fork of [f0e/blur](https://github.com/f0e/blur) adds **GPU frame blending**, enabled by default, using VapourSynth R82's Vulkan backend. The new `gpu blending` checkbox is separate from GPU decoding, interpolation and encoding. Existing configs enable it automatically unless they contain `gpu blending: false`.
+
+The GPU path preserves your blur amount, weighting and output frame selection. Small numerical differences from CPU processing are possible. This first version accelerates blending with `blur gamma: 1` and at most 26 input frames per blend. Other gamma values, larger blend windows, or an unavailable GPU backend use the original CPU blending path without changing those settings. Disable `gpu blending` to compare with the CPU path explicitly.
+
+GPU blending requires **VapourSynth R82 or newer and a GPU/driver supporting Vulkan 1.4**. The Windows installer from this fork bundles R82. This accelerates the blending stage; it does not turn the existing decode/filter/encode pipeline into an entirely GPU-resident pipeline.
+
+**Windows compatibility:** R82 removed the legacy VapourSynth API used by the bundled upstream SVP plugins, so this fork's Windows package does not include SVP. This release targets native high-frame-rate footage without interpolation or deduplication. New configs therefore default to `interpolate: false` and `deduplicate: false`; explicit values in existing configs are still read unchanged. SVP interpolation and SVP deduplication are unavailable in this package. Other interpolation/deduplication modes are outside this release's validated workflow.
+
+Global settings are stored separately from upstream in `blur-gpu` (`%APPDATA%\blur-gpu` on Windows). You can explicitly import an existing `.cfg`; its settings are preserved, so disable SVP interpolation and deduplication before rendering with this package. Explicitly supplied configs and configs beside input videos retain their existing behavior.
+
+For native **4K 240 fps → 60 fps**, set `blur output fps: 60`, leave `gpu blending` enabled, and keep `interpolate` and `deduplicate` disabled. Keep your preferred blur amount, weighting and gamma (gamma values other than 1 use CPU blending). GPU encoding remains an independent choice. Compare render time with the same settings and preview disabled. If your footage needs duplicate-frame repair, use a compatible upstream installation until that workflow is supported here.
+
+Download this fork's [Windows installer](https://github.com/DragonAura/blur/releases/latest/download/blur-Windows-Installer-x64.exe) or see its [releases](https://github.com/DragonAura/blur/releases). In-app updates also use DragonAura/blur. The upstream documentation and downloads below are retained for reference.
+
+---
+
+## Upstream Blur
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/adc158b9-8ec4-4e5a-b372-ed1fad9d8d61" width="30%" />
@@ -140,6 +158,7 @@ Blur supports rendering from frameservers. This means you can avoid having to ru
 
 - gpu decoding - uses gpu when decoding
 - gpu interpolation - uses gpu when interpolating
+- gpu blending - uses the Vulkan GPU backend for frame blending when available (enabled by default in this fork)
 - gpu encoding - uses gpu when rendering
 - gpu type (nvidia/amd/intel) - your gpu type
 

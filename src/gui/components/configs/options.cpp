@@ -322,6 +322,7 @@ void configs::options(ui::Container& container) {
 	ui::add_checkbox(
 		"gpu interpolation checkbox", container, "gpu interpolation", settings.gpu_interpolation, fonts::dejavu
 	);
+	ui::add_checkbox("gpu blending checkbox", container, "gpu blending", settings.gpu_blending, fonts::dejavu);
 
 	if (settings.advanced.ffmpeg_override.empty()) {
 		ui::add_checkbox("gpu encoding checkbox", container, "gpu encoding", settings.gpu_encoding, fonts::dejavu);

@@ -65,12 +65,13 @@ std::string config_blur::generate_config_string(const BlurSettings& settings, bo
 		output << "copy dates: " << (settings.copy_dates ? "true" : "false") << "\n";
 	}
 
-	// GPU acceleration section
-	if (!concise || settings.gpu_decoding || settings.gpu_interpolation || settings.gpu_encoding) {
+	// Always include GPU settings so an explicitly disabled default survives config export.
+	{
 		output << "\n";
 		output << "- gpu acceleration" << "\n";
 		output << "gpu decoding: " << (settings.gpu_decoding ? "true" : "false") << "\n";
 		output << "gpu interpolation: " << (settings.gpu_interpolation ? "true" : "false") << "\n";
+		output << "gpu blending: " << (settings.gpu_blending ? "true" : "false") << "\n";
 		output << "gpu encoding: " << (settings.gpu_encoding ? "true" : "false") << "\n";
 	}
 
@@ -247,6 +248,7 @@ BlurSettings config_blur::parse_from_map(
 
 	config_base::extract_config_value(config_map, "gpu decoding", settings.gpu_decoding);
 	config_base::extract_config_value(config_map, "gpu interpolation", settings.gpu_interpolation);
+	config_base::extract_config_value(config_map, "gpu blending", settings.gpu_blending);
 	config_base::extract_config_value(config_map, "gpu encoding", settings.gpu_encoding);
 
 	config_base::extract_config_value(config_map, "timescale", settings.timescale);
@@ -398,6 +400,7 @@ tl::expected<nlohmann::json, std::string> BlurSettings::to_json() const {
 
 	j["gpu_decoding"] = this->gpu_decoding;
 	j["gpu_interpolation"] = this->gpu_interpolation;
+	j["gpu_blending"] = this->gpu_blending;
 	j["gpu_encoding"] = this->gpu_encoding;
 
 	j["filters"] = this->filters;

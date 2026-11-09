@@ -28,6 +28,17 @@ fps_den = vars().get("fps_den", -1)
 color_range = vars().get("color_range", "")
 is_full_color_range = color_range == "pc"
 
+
+def require_svp():
+    if not hasattr(core, "svp1") or not hasattr(core, "svp2"):
+        raise u.BlurException(
+            "SVP is not available in this VapourSynth R82 package. "
+            "For high-frame-rate footage such as 240 fps to 60 fps, disable "
+            "interpolate and deduplicate. If interpolation or deduplication is "
+            "needed, select RIFE as its method."
+        )
+
+
 # validate some settings
 svp_interpolation_algorithm = u.coalesce(
     u.safe_int(settings["svp_interpolation_algorithm"]),
@@ -89,6 +100,7 @@ if settings["deduplicate"] and settings["deduplicate_range"] != 0:
             )
 
         case "svp":
+            require_svp()
             video = blur.deduplicate.fill_drops_multiple(
                 video,
                 is_full_color_range=is_full_color_range,
@@ -195,6 +207,7 @@ if settings["interpolate"]:
             #     )
 
             case _:  # svp
+                require_svp()
                 if not settings["manual_svp"]:
                     video = blur.interpolate.interpolate_svp(
                         video,
@@ -253,15 +266,20 @@ if settings["blur"]:
             )
 
             gamma = float(settings["blur_gamma"])
-            if gamma == 1.0:
-                video = blur.blending.average(video, weights)
-            else:
-                video = blur.blending.average_bright(
-                    video, is_full_color_range, gamma, weights
-                )
+            video = blur.blending.blend(
+                video,
+                weights,
+                gpu=settings.get("gpu_blending", True),
+                gamma=gamma,
+                is_full_color_range=is_full_color_range,
+            )
 
     # set exact fps
     video = blur.interpolate.change_fps(video, settings["blur_output_fps"])
+
+# Only requested output frames cross back to system memory. CPU-only adjustment
+# filters and the existing FFmpeg output pipe continue to receive ordinary frames.
+video = blur.blending.download(video)
 
 # filters
 if settings["filters"]:

@@ -1,6 +1,9 @@
 name: Build
 
-on: [push]
+on:
+  push:
+    branches-ignore: ['gpu-frame-blending-r82']
+    tags-ignore: ['v*-gpu-r82*']
 
 jobs:
   build:

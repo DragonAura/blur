@@ -32,7 +32,7 @@ struct BlurSettings {
 	std::string blur_weighting = "equal";
 	float blur_gamma = 1.f;
 
-	bool interpolate = true;
+	bool interpolate = false;
 #ifdef __APPLE__
 	std::string interpolated_fps = "600";
 	std::string interpolation_method = "rife";
@@ -57,7 +57,7 @@ struct BlurSettings {
 	std::string encode_preset = "h264";
 	int quality = 16;
 
-	bool deduplicate = true;
+	bool deduplicate = false;
 #ifdef __APPLE__
 	std::string deduplicate_method = "rife";
 #else
@@ -70,6 +70,7 @@ struct BlurSettings {
 
 	bool gpu_decoding = true;
 	bool gpu_interpolation = true;
+	bool gpu_blending = true;
 	bool gpu_encoding = false;
 
 	bool override_advanced = false;

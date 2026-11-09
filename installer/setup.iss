@@ -2,15 +2,26 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 #include "environment.iss"
 
-#define MyAppName "blur"
-#define MyAppVersion "2.0"
-#define MyAppPublisher "tekno"
-#define MyAppURL "https://f0e.github.io/blur"
+#ifndef MyAppName
+  #define MyAppName "blur"
+#endif
+#ifndef MyAppVersion
+  #define MyAppVersion "2.0"
+#endif
+#ifndef MyAppPublisher
+  #define MyAppPublisher "tekno"
+#endif
+#ifndef MyAppURL
+  #define MyAppURL "https://f0e.github.io/blur"
+#endif
+#ifndef MyAppId
+  #define MyAppId "{{D283CF94-CD1F-432D-B4BE-0516562C258B}"
+#endif
 
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application. Do not use the same AppId value in installers for other applications.
 ; (To generate a new GUID, click Tools | Generate GUID inside the IDE.)
-AppId={{D283CF94-CD1F-432D-B4BE-0516562C258B}
+AppId={#MyAppId}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 ;AppVerName={#MyAppName} {#MyAppVersion}

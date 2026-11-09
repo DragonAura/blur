@@ -57,11 +57,15 @@ def with_format(
     orig_format = video.format
     needs_conversion = orig_format.id != target_format
 
+    # Use the resizer's named ranges rather than confusing numeric arguments
+    # with the differently numbered legacy _ColorRange frame property.
+    range_name = "full" if is_full_color_range else "limited"
+
     if needs_conversion:
         convert_kwargs = {
             "format": target_format,
-            "range_in": is_full_color_range,
-            "range": is_full_color_range,
+            "range_in_s": range_name,
+            "range_s": range_name,
         }
 
         if target_format == vs.RGBS and orig_format.color_family == vs.YUV:
@@ -74,8 +78,8 @@ def with_format(
     if needs_conversion:
         convert_back_kwargs = {
             "format": orig_format.id,
-            "range_in": is_full_color_range,
-            "range": is_full_color_range,
+            "range_in_s": range_name,
+            "range_s": range_name,
         }
 
         if target_format == vs.RGBS and orig_format.color_family == vs.YUV:

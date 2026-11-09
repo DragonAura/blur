@@ -1,0 +1,86 @@
+name: Publish verified Windows GPU build
+
+on:
+  push:
+    branches: ['gpu-frame-blending-r82']
+    paths: ['.github/gpu-release.json']
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: publish-windows-gpu
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'DragonAura/blur'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify the tested source and successful build
+        id: verified
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const request = JSON.parse(fs.readFileSync('.github/gpu-release.json', 'utf8'));
+            if (!/^v\d+\.\d+\.\d+-gpu-r82$/.test(request.tag) ||
+                !/^[0-9a-f]{40}$/.test(request.source_sha) ||
+                !Number.isSafeInteger(request.run_id) || request.run_id < 1 ||
+                typeof request.notes !== 'string') throw new Error('Invalid release request');
+            const {data: run} = await github.rest.actions.getWorkflowRun({...context.repo, run_id: request.run_id});
+            if (run.conclusion !== 'success' || run.head_sha !== request.source_sha ||
+                run.path !== '.github/workflows/build-windows-gpu.yaml' ||
+                run.head_repository.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+              throw new Error('The release must use the exact successful build tested on the GPU');
+            }
+            const {data: header} = await github.rest.repos.getContent({...context.repo,
+              path: 'src/common/blur.h', ref: request.source_sha});
+            const version = Buffer.from(header.content, 'base64').toString('utf8').match(/BLUR_VERSION\s*=\s*"([^"]+)"/);
+            if (!version || `v${version[1]}` !== request.tag) throw new Error('Version/tag mismatch');
+            core.setOutput('run_id', String(request.run_id));
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: blur-Windows-GPU-R82-x64
+          path: release-assets
+          run-id: ${{ steps.verified.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify asset hashes and publish
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const crypto = require('crypto');
+            const request = JSON.parse(fs.readFileSync('.github/gpu-release.json', 'utf8'));
+            const names = ['blur-Windows-GPU-R82-Portable-x64.zip', 'blur-Windows-Installer-x64.exe', 'SHA256SUMS.txt'];
+            for (const name of names) {
+              const digest = crypto.createHash('sha256').update(fs.readFileSync(`release-assets/${name}`)).digest('hex');
+              if (digest !== request.sha256?.[name]) throw new Error(`Untested or changed artifact: ${name}`);
+            }
+            let release;
+            try {
+              ({data: release} = await github.rest.repos.getReleaseByTag({...context.repo, tag: request.tag}));
+              if (!release.draft) throw new Error('Refusing to replace an already published release');
+              if (release.target_commitish !== request.source_sha) throw new Error('Draft source mismatch');
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              ({data: release} = await github.rest.repos.createRelease({...context.repo,
+                tag_name: request.tag, target_commitish: request.source_sha,
+                name: `Blur ${request.tag.slice(1)} — GPU frame blending`,
+                body: request.notes, draft: true, prerelease: false}));
+            }
+            for (const name of names) {
+              const existing = release.assets.find(asset => asset.name === name);
+              if (existing) await github.rest.repos.deleteReleaseAsset({...context.repo, asset_id: existing.id});
+              const data = fs.readFileSync(`release-assets/${name}`);
+              await github.rest.repos.uploadReleaseAsset({...context.repo, release_id: release.id,
+                name, data, headers: {'content-type': 'application/octet-stream', 'content-length': data.length}});
+            }
+            const {data: published} = await github.rest.repos.updateRelease({...context.repo,
+              release_id: release.id, body: request.notes, draft: false, make_latest: 'true'});
+            core.notice(`Published ${published.html_url}`);
