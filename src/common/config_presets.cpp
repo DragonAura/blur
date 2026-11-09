@@ -207,7 +207,7 @@ tl::expected<std::string, std::string> config_presets::extract_codec_from_args(
 ) {
 	const std::vector<std::string> codec_flags = { "-c:v", "-codec:v", "-vcodec", "-c:video", "-codec:video" };
 
-	for (size_t i = 0; i < ffmpeg_args.size() - 1; i++) {
+	for (size_t i = 0; i + 1 < ffmpeg_args.size(); i++) {
 		for (const auto& flag : codec_flags) {
 			if (ffmpeg_args[i] == flag) {
 				return ffmpeg_args[i + 1];
