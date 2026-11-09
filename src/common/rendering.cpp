@@ -332,6 +332,16 @@ tl::expected<RenderCommands, std::string> Render::build_render_commands() {
 		for (const auto& arg : preset_args)
 			commands.ffmpeg.push_back(u::towstring(arg));
 
+		// Opt-in multi-engine encoding keeps the selected preset and CQ. Respect
+		// explicit split settings and leave other codecs and custom overrides alone.
+		if (m_settings.nvenc_split_encode && m_settings.gpu_encoding && m_app_settings.gpu_type == "nvidia") {
+			auto codec = config_presets::extract_codec_from_args(preset_args);
+			bool supports_split = codec && (*codec == "av1_nvenc" || *codec == "hevc_nvenc");
+			bool has_split_option = std::ranges::find(preset_args, "-split_encode_mode") != preset_args.end();
+			if (supports_split && !has_split_option)
+				commands.ffmpeg.insert(commands.ffmpeg.end(), { L"-split_encode_mode", L"forced" });
+		}
+
 		// audio
 		commands.ffmpeg.insert(commands.ffmpeg.end(), { L"-c:a", L"aac", L"-b:a", L"320k" });
 
@@ -348,6 +358,8 @@ tl::expected<RenderCommands, std::string> Render::build_render_commands() {
 			commands.ffmpeg.end(),
 			{ L"-map",
 		      L"0:v",
+		      L"-vf",
+		      L"fps=2,scale=w='min(960,iw)':h=-2",
 		      L"-q:v",
 		      L"2",
 		      L"-update",

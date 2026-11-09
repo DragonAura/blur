@@ -67,7 +67,7 @@ def blend(
     weights: list[float],
     divisor: float | None = None,
     *,
-    gpu: bool = True,
+    gpu: bool = False,
     gamma: float = 1.0,
     is_full_color_range: bool = False,
 ) -> vs.VideoNode:

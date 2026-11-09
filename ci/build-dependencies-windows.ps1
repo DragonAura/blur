@@ -43,6 +43,17 @@ function Download-File {
     Write-Host "Download completed"
 }
 
+function Assert-FileSha256 {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$ExpectedHash
+    )
+    $actual = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+    if ($actual -ne $ExpectedHash) {
+        throw "SHA256 mismatch for ${Path}: expected $ExpectedHash, got $actual"
+    }
+}
+
 # Function to extract files from archive and copy to destination
 function Extract-Files {
     param (
@@ -143,10 +154,6 @@ $pluginWheels = @(
     @{
         Name = "vapoursynth_mvtools-29-py3-none-win_amd64.whl";
         Url = "https://files.pythonhosted.org/packages/28/f5/1697a4c7238f442a24982a3e5b7b4cbc54d411b40bf3f83b955ab0ed3cc2/vapoursynth_mvtools-29-py3-none-win_amd64.whl";
-    },
-    @{
-        Name = "vapoursynth_lsmas-1310.0.0.0-py3-none-win_amd64.whl";
-        Url = "https://files.pythonhosted.org/packages/a2/4f/f5804dbeb6563486e1d72ce3e72cb9ae2c7201c6660112447f2e1c6f85ec/vapoursynth_lsmas-1310.0.0.0-py3-none-win_amd64.whl";
     }
 )
 foreach ($wheel in $pluginWheels) {
@@ -155,6 +162,61 @@ foreach ($wheel in $pluginWheels) {
     [IO.Compression.ZipFile]::ExtractToDirectory($wheelPath, $sitePackagesDir, $true)
     Remove-BuildPath $wheelPath
 }
+
+# The official x64 release and the identically versioned PyPI wheel are not
+# equivalent builds. Use the verified release DLL, which retains the dedicated
+# P010/SSE2 conversion path. Pin both the archive and the extracted binary.
+$lsmashArchive = Join-Path $outDir "L-SMASH-Works-r1310.0.0.0.7z"
+$lsmashExtractDir = Join-Path $outDir "lsmash-release-extract"
+$lsmashLicenseDir = Join-Path $outDir "licenses/LSMASHSource-r1310"
+Download-File -Url "https://github.com/HomeOfAviSynthPlusEvolution/L-SMASH-Works/releases/download/1310.0.0.0/L-SMASH-Works-r1310.0.0.0.7z" -OutFile $lsmashArchive
+Assert-FileSha256 -Path $lsmashArchive -ExpectedHash "b4fd48e3cb97c9583e08e69a3dd49a6500dede3bbc054f0fb9cddd0f5448e6e1"
+if (-not (Get-Command "7z" -ErrorAction SilentlyContinue)) { throw "7z not found. Install 7-Zip and add it to PATH." }
+try {
+    & 7z x $lsmashArchive -o"$lsmashExtractDir" -y
+    if ($LASTEXITCODE -ne 0) { throw "Failed to extract $lsmashArchive" }
+    $lsmashDll = Join-Path $lsmashExtractDir "x64/LSMASHSource.dll"
+    Assert-FileSha256 -Path $lsmashDll -ExpectedHash "0abac09524e56413eeb8b52119d8575fc14753492ce53e2133943b91e08452d6"
+    Copy-Item -LiteralPath $lsmashDll -Destination $pluginsDir
+    New-Item -ItemType Directory -Force -Path $lsmashLicenseDir | Out-Null
+    Copy-Item -LiteralPath (Join-Path $lsmashExtractDir "VapourSynth/LICENSE"), (Join-Path $lsmashExtractDir "VapourSynth/README.md") -Destination $lsmashLicenseDir
+} finally {
+    Remove-BuildPath $lsmashExtractDir
+    Remove-BuildPath $lsmashArchive
+}
+
+# App-local CRT DLLs come only from the installed MSVC toolchain's documented
+# redistributable directory, populated by the CI Developer Command Prompt.
+# Never harvest DLLs from System32 or an unrelated application's installation.
+if (-not $env:VCToolsRedistDir -or -not (Test-Path -LiteralPath $env:VCToolsRedistDir -PathType Container)) {
+    throw "VCToolsRedistDir is unavailable. Run from the configured MSVC x64 Developer Command Prompt."
+}
+$crtDirectory = Get-ChildItem -LiteralPath (Join-Path $env:VCToolsRedistDir "x64") -Directory -Filter "Microsoft.VC*.CRT" |
+    Sort-Object Name -Descending | Select-Object -First 1
+if (-not $crtDirectory) { throw "The MSVC x64 redistributable CRT directory was not found." }
+foreach ($name in @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")) {
+    if (-not (Test-Path -LiteralPath (Join-Path $crtDirectory.FullName $name) -PathType Leaf)) {
+        throw "MSVC redistributable is missing $name"
+    }
+}
+$crtFiles = @(Get-ChildItem -LiteralPath $crtDirectory.FullName -Filter *.dll -File)
+# Python.exe and vspipe.exe live in different directories. Supply the same CRT
+# set beside both entry points, so neither needs a machine-wide VC installation.
+foreach ($destination in @($vapoursynthDir, (Join-Path $sitePackagesDir "vapoursynth"))) {
+    foreach ($file in $crtFiles) {
+        Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
+    }
+}
+$crtLicenseDir = Join-Path $outDir "licenses/MSVC-runtime"
+New-Item -ItemType Directory -Force -Path $crtLicenseDir | Out-Null
+@(
+    "MSVC x64 app-local runtime copied from the build toolchain's VCToolsRedistDir.",
+    "CRT folder: $($crtDirectory.Name)",
+    "Redistribution documentation: https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files",
+    "Files (SHA256):"
+) + @($crtFiles | ForEach-Object {
+    "{0}  {1}" -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
+}) | Set-Content -LiteralPath (Join-Path $crtLicenseDir "BUILD-PROVENANCE.txt") -Encoding utf8
 
 $plugins = @(
     @{

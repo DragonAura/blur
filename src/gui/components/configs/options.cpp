@@ -291,6 +291,14 @@ void configs::options(ui::Container& container) {
 			0.f,
 			quality_config.quality_label
 		);
+
+		if (settings.gpu_encoding && app_settings.gpu_type == "nvidia" && codec
+			&& (*codec == "hevc_nvenc" || *codec == "av1_nvenc")) {
+			ui::add_checkbox(
+				"nvenc split encoding checkbox", container, "nvenc split encoding", settings.nvenc_split_encode,
+				fonts::dejavu
+			);
+		}
 	}
 	else {
 		ui::add_text(
@@ -318,6 +326,7 @@ void configs::options(ui::Container& container) {
 	section_component("gpu acceleration");
 
 	ui::add_checkbox("gpu decoding checkbox", container, "gpu decoding", settings.gpu_decoding, fonts::dejavu);
+	ui::add_checkbox("fast decoding checkbox", container, "fast decoding", settings.fast_decoding, fonts::dejavu);
 
 	ui::add_checkbox(
 		"gpu interpolation checkbox", container, "gpu interpolation", settings.gpu_interpolation, fonts::dejavu

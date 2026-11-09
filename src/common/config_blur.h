@@ -69,9 +69,11 @@ struct BlurSettings {
 	bool copy_dates = false;
 
 	bool gpu_decoding = true;
+	bool fast_decoding = false;
 	bool gpu_interpolation = true;
-	bool gpu_blending = true;
+	bool gpu_blending = false;
 	bool gpu_encoding = false;
+	bool nvenc_split_encode = false;
 
 	bool override_advanced = false;
 	AdvancedSettings advanced;

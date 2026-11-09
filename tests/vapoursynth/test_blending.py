@@ -157,7 +157,7 @@ class RuntimeBlendingTests(unittest.TestCase):
         probe = cls.core.std.BlankClip(width=16, height=16, length=5)
         cls.log = io.StringIO()
         with contextlib.redirect_stderr(cls.log):
-            result = blending.blend(probe, [1] * 5)
+            result = blending.blend(probe, [1] * 5, gpu=True)
         if not getattr(result, "gpu_resident", False):
             unavailable(cls.log.getvalue().strip())
         # Force actual upload, shader compilation, execution and download.
@@ -195,7 +195,7 @@ class RuntimeBlendingTests(unittest.TestCase):
     def cpu_and_gpu(self, clip, weights, divisor=None):
         cpu = blending.average(clip, weights, divisor)
         with contextlib.redirect_stderr(io.StringIO()):
-            gpu = blending.blend(clip, weights, divisor)
+            gpu = blending.blend(clip, weights, divisor, gpu=True)
         self.assertTrue(gpu.gpu_resident)
         self.assertEqual(cpu.format.id, gpu.format.id)
         self.assertEqual(cpu.num_frames, gpu.num_frames)
@@ -296,7 +296,7 @@ class RuntimeBlendingTests(unittest.TestCase):
                     log = io.StringIO()
                     with contextlib.redirect_stderr(log):
                         actual = blending.blend(
-                            clip, weights, gamma=2.2, is_full_color_range=full
+                            clip, weights, gpu=True, gamma=2.2, is_full_color_range=full
                         )
                     self.assertFalse(actual.gpu_resident)
                     self.assertIn("gamma-correct", log.getvalue())

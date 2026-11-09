@@ -11,6 +11,7 @@ sys.path.insert(1, str(Path(__file__).parent))
 import blur.blending
 import blur.deduplicate
 import blur.interpolate
+import blur.source
 import blur.weighting
 import blur.utils as u
 
@@ -60,13 +61,22 @@ if rife_gpu_index == -1:  # haven't benchmarked yet..?
     rife_gpu_index = 0
 
 if vars().get("enable_lsmash") == "true":
+    fast_decoding = settings.get("fast_decoding", False)
     video = core.lsmas.LWLibavSource(
         source=video_path,
         cache=0,
         prefer_hw=3 if settings["gpu_decoding"] else 0,
         fpsnum=fps_num if fps_num != -1 else None,
         fpsden=fps_den if fps_den != -1 else None,
+        variable=1 if fast_decoding else 0,
     )
+    if fast_decoding:
+        video = blur.source.strict_constant(video)
+        print(
+            "source: fast decoding (strict constant resolution and pixel format)",
+            file=sys.stderr,
+            flush=True,
+        )
 else:
     video = core.bs.VideoSource(
         source=video_path,
@@ -272,7 +282,7 @@ if settings["blur"]:
             video = blur.blending.blend(
                 video,
                 weights,
-                gpu=settings.get("gpu_blending", True),
+                gpu=settings.get("gpu_blending", False),
                 gamma=gamma,
                 is_full_color_range=is_full_color_range,
             )

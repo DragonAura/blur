@@ -1,16 +1,38 @@
-# Blur — GPU frame blending fork
+# Blur — R82 Windows fork
 
-This fork of [f0e/blur](https://github.com/f0e/blur) adds **GPU frame blending**, enabled by default, using VapourSynth R82's Vulkan backend. The new `gpu blending` checkbox is separate from GPU decoding, interpolation and encoding. Existing configs enable it automatically unless they contain `gpu blending: false`.
+This fork of [f0e/blur](https://github.com/f0e/blur) uses VapourSynth R82 and defaults to the original **CPU frame blending**. The supplied NVIDIA profile combines CPU blending with GPU decoding and AV1 NVENC encoding for native **4K 120 fps → 60 fps** footage, without interpolation or deduplication.
 
-The GPU path preserves your blur amount, weighting and output frame selection. Small numerical differences from CPU processing are possible. This first version accelerates blending with `blur gamma: 1` and at most 26 input frames per blend. Other gamma values, larger blend windows, or an unavailable GPU backend use the original CPU blending path without changing those settings. Disable `gpu blending` to compare with the CPU path explicitly.
+The separate `gpu blending` checkbox remains available for comparison, but is **off by default** because current tests have not shown an export-speed benefit. GPU decoding and encoding can stay enabled while blending runs on the CPU. Configs without a `gpu blending` entry now use CPU blending; an explicit value in an existing config is preserved.
 
-GPU blending requires **VapourSynth R82 or newer and a GPU/driver supporting Vulkan 1.4**. The Windows installer from this fork bundles R82. This accelerates the blending stage; it does not turn the existing decode/filter/encode pipeline into an entirely GPU-resident pipeline.
+The optional GPU path preserves the selected blur amount, weighting and output frames, with possible small numerical differences from CPU processing. It supports `blur gamma: 1` and at most 26 input frames per blend. Other gamma values, larger blend windows, or an unavailable GPU backend use CPU blending without changing those settings. GPU blending requires **VapourSynth R82 or newer and Vulkan 1.4 support**; enabling it does not keep the entire decode/filter/encode pipeline on the GPU. The Windows package bundles R82.
 
 **Windows compatibility:** R82 removed the legacy VapourSynth API used by the bundled upstream SVP plugins, so this fork's Windows package does not include SVP. This release targets native high-frame-rate footage without interpolation or deduplication. New configs therefore default to `interpolate: false` and `deduplicate: false`; explicit values in existing configs are still read unchanged. SVP interpolation and SVP deduplication are unavailable in this package. Other interpolation/deduplication modes are outside this release's validated workflow.
 
 Global settings are stored separately from upstream in `blur-gpu` (`%APPDATA%\blur-gpu` on Windows). You can explicitly import an existing `.cfg`; its settings are preserved, so disable SVP interpolation and deduplication before rendering with this package. Explicitly supplied configs and configs beside input videos retain their existing behavior.
 
-For native **4K 240 fps → 60 fps**, set `blur output fps: 60`, leave `gpu blending` enabled, and keep `interpolate` and `deduplicate` disabled. Keep your preferred blur amount, weighting and gamma (gamma values other than 1 use CPU blending). GPU encoding remains an independent choice. Compare render time with the same settings and preview disabled. If your footage needs duplicate-frame repair, use a compatible upstream installation until that workflow is supported here.
+Import the packaged **`4k120-to-60-av1.cfg`** in the GUI, or pass it to `blur-cli` with `-c`. It sets **Vegas weighting, blur amount 1, gamma 1, 60 fps output, AV1 quality 22**, disables interpolation and deduplication, and enables GPU decoding and encoding while leaving GPU blending off. The built-in NVIDIA AV1 preset uses **NVENC p5, VBR, CQ 22** with this profile; choose NVIDIA if the GPU-device dropdown appears. Existing personal presets can override the built-in encoder arguments. GUI previews refresh twice per second at a maximum width of 960 pixels; the exported video keeps its full resolution and output frame rate. If your footage needs duplicate-frame repair, use a compatible upstream installation until that workflow is supported here.
+
+The supplied profile also enables two optional settings, both **off by default** in new configs:
+
+- **`fast decoding`** uses a faster source path for footage with constant resolution and pixel format. Turn it off for footage that changes either during playback. This setting preserves the decoded frames and blending settings.
+- **`nvenc split encoding`** uses multiple encoding engines on supported NVIDIA GPUs with HEVC/AV1 encoding. Blending and the selected preset/CQ remain unchanged, but the compressed output, compression efficiency and image quality can change. Treat this as an optional encoding mode rather than a lossless speed improvement. Custom FFmpeg overrides keep their own arguments.
+
+### Measured workload
+
+Local validation on a Ryzen 7 9800X3D and RTX 5090 D v2 used real 3840x2160 AV1 8-bit footage at 120 fps, Vegas/amount 1/gamma 1 blending to 60 fps, and AV1 NVENC p5/VBR/CQ22. The baseline used the unmodified upstream `6fd0ecc` script, VapourSynth R70, L-SMASH1194 and Akarin0.96. Both paths used the same FFmpeg build, included audio encoding, and enabled GUI-equivalent preview output (full-resolution every frame before; 960-pixel preview twice per second after).
+
+| 61.05-second excerpt, 3,663 output frames | Complete export time, two runs | VSPipe rendering rate |
+| --- | --- | --- |
+| Original pipeline | 32.43 / 32.35 seconds | 117.48 / 117.65 fps |
+| Optimized pipeline and supplied profile | 20.74 / 20.61 seconds | 185.29 / 185.91 fps |
+
+This is approximately **1.57x faster complete export**, not a 5-10x improvement. The rendering-rate column excludes initialization and finalization; complete times include them. These are short local excerpts, not a completed 50-minute export or a guarantee for other sources. The private video is not included in this repository.
+
+On a separate 21.05-second excerpt, all **1,263 mixed frames / 3,789 planes** matched the original CPU pixels exactly. CPU regression tests also check frame properties, tails, fractional-rate fallback and 8/10-bit formats. Against the same original blended reference, the original and split-encoded AV1 outputs measured PSNR **43.787703 / 43.784062 dB** and SSIM **0.995446 / 0.995435**; the split-encoded file was **0.77% larger**. These close sample metrics do not establish visually lossless encoding for every video.
+
+The changes remove redundant source-frame copies for constant-format footage, avoid per-frame Python clip construction for exact power-of-two CPU decimation, reduce preview work, and optionally enable NVENC split-frame encoding. Simply moving blending to Vulkan, enlarging the Windows pipe, or running two/three independent exports did not beat this selected combination. The package also uses the SHA256-pinned official L-SMASH1310 x64 release and includes its app-local MSVC runtime.
+
+NVIDIA lists [three encoders and two decoders for the RTX 5090 D v2](https://www.nvidia.cn/geforce/graphics-cards/50-series/rtx-5090-d-v2/). [Split-frame encoding](https://docs.nvidia.com/video-technologies/video-codec-sdk/13.0/nvenc-video-encoder-api-prog-guide/index.html#multi-nvenc-split-frame-encoding-in-hevc-and-av1) can use multiple NVENC engines within one HEVC/AV1 session, with an encoding-quality tradeoff. Multiple engines do not multiply every stage of the existing CPU-memory pipeline.
 
 Download this fork's [Windows installer](https://github.com/DragonAura/blur/releases/latest/download/blur-Windows-Installer-x64.exe) or see its [releases](https://github.com/DragonAura/blur/releases). In-app updates also use DragonAura/blur. The upstream documentation and downloads below are retained for reference.
 
@@ -157,9 +179,11 @@ Blur supports rendering from frameservers. This means you can avoid having to ru
 ### gpu acceleration
 
 - gpu decoding - uses gpu when decoding
+- fast decoding - optional faster source path for constant-resolution, constant-format footage; disabled by default
 - gpu interpolation - uses gpu when interpolating
-- gpu blending - uses the Vulkan GPU backend for frame blending when available (enabled by default in this fork)
+- gpu blending - optional Vulkan GPU frame blending, disabled by default in this fork; it can be slower than CPU blending, and GPU decoding/encoding do not require it
 - gpu encoding - uses gpu when rendering
+- nvenc split encoding - optional multi-engine NVIDIA HEVC/AV1 encoding; disabled by default and can change compression efficiency and image quality
 - gpu type (nvidia/amd/intel) - your gpu type
 
 ### timescale

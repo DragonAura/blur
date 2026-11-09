@@ -204,6 +204,27 @@ void configs::option_information(ui::Container& container) {
 
 		// Advanced rendering
 		// { "gpu interpolation checkbox", { "Uses GPU for interpolation", }, },
+		{
+			"fast decoding checkbox",
+			{
+				"Faster decoding for footage with constant resolution and pixel format; off by default",
+				"Turn this off if the input changes resolution or pixel format",
+			},
+		},
+		{
+			"gpu blending checkbox",
+			{
+				"Optional GPU frame blending; disabled by default because it can be slower than CPU blending",
+				"GPU decoding and encoding can remain enabled when this is off",
+			},
+		},
+		{
+			"nvenc split encoding checkbox",
+			{
+				"Uses multiple encoding engines for NVIDIA HEVC/AV1 on supported GPUs; off by default",
+				"Keeps blending, preset and CQ settings, but can change compression efficiency and image quality",
+			},
+		},
 		// { "gpu encoding checkbox", { "Uses GPU for rendering", }, },
 		// { "gpu encoding type dropdown", { "Select GPU type", }, },
 		{

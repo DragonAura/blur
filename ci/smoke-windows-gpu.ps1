@@ -17,6 +17,7 @@ pre-interpolate: false
 deduplicate: false
 gpu blending: true
 gpu decoding: false
+fast decoding: true
 gpu interpolation: false
 gpu encoding: false
 preview: false

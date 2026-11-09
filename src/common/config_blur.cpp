@@ -70,9 +70,11 @@ std::string config_blur::generate_config_string(const BlurSettings& settings, bo
 		output << "\n";
 		output << "- gpu acceleration" << "\n";
 		output << "gpu decoding: " << (settings.gpu_decoding ? "true" : "false") << "\n";
+		output << "fast decoding: " << (settings.fast_decoding ? "true" : "false") << "\n";
 		output << "gpu interpolation: " << (settings.gpu_interpolation ? "true" : "false") << "\n";
 		output << "gpu blending: " << (settings.gpu_blending ? "true" : "false") << "\n";
 		output << "gpu encoding: " << (settings.gpu_encoding ? "true" : "false") << "\n";
+		output << "nvenc split encoding: " << (settings.nvenc_split_encode ? "true" : "false") << "\n";
 	}
 
 	// Timescale section
@@ -247,9 +249,11 @@ BlurSettings config_blur::parse_from_map(
 	config_base::extract_config_value(config_map, "copy dates", settings.copy_dates);
 
 	config_base::extract_config_value(config_map, "gpu decoding", settings.gpu_decoding);
+	config_base::extract_config_value(config_map, "fast decoding", settings.fast_decoding);
 	config_base::extract_config_value(config_map, "gpu interpolation", settings.gpu_interpolation);
 	config_base::extract_config_value(config_map, "gpu blending", settings.gpu_blending);
 	config_base::extract_config_value(config_map, "gpu encoding", settings.gpu_encoding);
+	config_base::extract_config_value(config_map, "nvenc split encoding", settings.nvenc_split_encode);
 
 	config_base::extract_config_value(config_map, "timescale", settings.timescale);
 	config_base::extract_config_value(config_map, "input timescale", settings.input_timescale);
@@ -399,9 +403,11 @@ tl::expected<nlohmann::json, std::string> BlurSettings::to_json() const {
 	// j["copy_dates"] = this->copy_dates;
 
 	j["gpu_decoding"] = this->gpu_decoding;
+	j["fast_decoding"] = this->fast_decoding;
 	j["gpu_interpolation"] = this->gpu_interpolation;
 	j["gpu_blending"] = this->gpu_blending;
 	j["gpu_encoding"] = this->gpu_encoding;
+	j["nvenc_split_encode"] = this->nvenc_split_encode;
 
 	j["filters"] = this->filters;
 	j["brightness"] = this->brightness;

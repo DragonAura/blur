@@ -85,7 +85,7 @@ jobs:
               if (error.status !== 404) throw error;
               ({data: release} = await github.rest.repos.createRelease({...context.repo,
                 tag_name: request.tag, target_commitish: request.source_sha,
-                name: `Blur ${request.tag.slice(1)} — GPU frame blending`,
+                name: `Blur ${request.tag.slice(1)} — 4K AV1 export optimization`,
                 body: request.notes, draft: true, prerelease: false}));
             }
             for (const name of names) {

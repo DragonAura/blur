@@ -130,12 +130,39 @@ def interpolate_svp(
     return svp(video, is_full_color_range, super_string, vectors_string, smooth_string)
 
 
-def change_fps(clip, fpsnum, fpsden=1):  # this is just directly from havsfunc
+def change_fps(clip, fpsnum, fpsden=1):
     if not isinstance(clip, vs.VideoNode):
         raise vs.Error("ChangeFPS: This is not a clip")
 
     factor = (fpsnum / fpsden) * (clip.fps_den / clip.fps_num)
 
+    # Preserve the legacy floating-point mapping outside exact power-of-two
+    # decimation. Native selection avoids building a Trim/Loop for every frame.
+    if (
+        type(fpsnum) is int
+        and type(fpsden) is int
+        and fpsnum > 0
+        and fpsden == 1
+        and clip.fps_den == 1
+        and not getattr(clip, "gpu_resident", False)
+        and clip.format is not None
+        and clip.width > 0
+        and clip.height > 0
+        and clip.fps_num % fpsnum == 0
+    ):
+        cycle = clip.fps_num // fpsnum
+        if cycle > 1 and (cycle & (cycle - 1)) == 0 and factor == 1 / cycle:
+            length = len(clip) // cycle
+            if length > 0:
+                selected = core.std.SelectEvery(
+                    clip, cycle=cycle, offsets=0, modify_duration=False
+                ).std.Trim(length=length)
+                assumed = core.std.AssumeFPS(selected, fpsnum=fpsnum, fpsden=fpsden)
+                # AssumeFPS changes duration properties; the original FrameEval
+                # returned all source properties unchanged, including omissions.
+                return core.std.CopyFrameProps(assumed, selected)
+
+    # Original havsfunc mapping, including its length and floating-point behavior.
     def frame_adjuster(n):
         real_n = math.floor(n / factor)
         one_frame_clip = clip[real_n] * (len(clip) + 100)
